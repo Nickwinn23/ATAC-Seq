@@ -1,0 +1,11 @@
+name: atacseqqc
+channels:
+- conda-forge
+- bioconda
+
+dependencies:
+- r-base=4.3.1
+- bioconductor-atacseqqc
+- bioconductor-chippeakanno
+- bioconductor-motifdb
+- bioconductor-genomicalignments

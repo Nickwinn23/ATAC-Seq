@@ -1,0 +1,345 @@
+SAMPLES = ['ATACrep3_R1', 'ATACrep3_R2', 'ATACrep4_R1', 'ATACrep4_R2']
+REP = ['ATACrep3', 'ATACrep4']
+ATAC = ['ATACrep3', 'ATACrep4']
+
+rule all:
+	input:
+		#expand('data/{sample}.fastqc.html', sample=SAMPLES),
+		#expand('data/{rep}_R1_trimmed_paired.fastq.gz', rep=REP),
+		#expand('data/{rep}_R1_trimmed_unpaired.fastq.gz', rep=REP),
+		#expand('data/{rep}_R2_trimmed_paired.fastq.gz', rep=REP),
+		#expand('data/{rep}_R2_trimmed_unpaired.fastq.gz', rep=REP)
+		#'align/bowtie2_index/GRCh38'
+		#expand('align/{atac}_aligned.bam', atac=ATAC),
+		#"align/multiqc_report.html"
+		#expand('align/{atac}_filtered.bam', atac=ATAC),
+		#expand('align/{atac}_sorted.bam', atac=ATAC),
+		#expand('align/{atac}_sorted.bam.bai', atac=ATAC),
+		#expand('align/{atac}_shifted.bam', atac=ATAC),
+		#expand('align/{atac}_sorted.bam.bai', atac=ATAC)
+		#expand('align/{atac}_shift_sort.bam.bai', atac=ATAC),
+		#expand('plot/{atac}.fragmentSizeDistribution.jpeg', atac=ATAC)
+		#expand('macs3/{atac}_peaks.narrowPeak', atac=ATAC)
+		#'results/intersect.bed'
+		#"results/reproducible_peaks.bed"
+		#'results/annotated.txt',
+		#'results/motif'
+		#'results/mypeaks.png'
+		#expand('bamcoverage/{atac}_nucleosomebound.bw', atac=ATAC),
+		#expand('bamcoverage/{atac}_nucleosomefree.bw', atac=ATAC)
+		#expand('bamcoverage/{atac}_plotprofile.png', atac=ATAC)
+		
+
+rule fastqc:
+	input:
+		raw = 'data/{sample}.fastq.gz'
+	output:
+		html = 'data/{sample}.fastqc.html'
+	params:
+		outdir = 'data/'
+	threads: 4
+	conda:
+		'envs/fastqc_env.yml'
+	shell:
+		"""
+		fastqc {input.raw} -t {threads} -o {params.outdir}
+		"""
+
+rule trimmomatic:
+	input:
+		trim1 = 'data/{sample}_R1.fastq.gz',
+		trim2 = 'data/{sample}_R2.fastq.gz'
+	output:
+		trimmed1 = 'data/{sample}_R1_trimmed_paired.fastq.gz',
+		trimmed2 = 'data/{sample}_R1_trimmed_unpaired.fastq.gz',
+		trimmed3 = 'data/{sample}_R2_trimmed_paired.fastq.gz',
+		trimmed4 = 'data/{sample}_R2_trimmed_unpaired.fastq.gz'
+	params:
+		adapters = '/path/to/adapters/NexteraPE-PE.fa'
+	conda:
+		'envs/trimmomatic_env.yml'
+	shell:
+		'''
+		trimmomatic PE -phred33 {input.trim1} {input.trim2} \
+		{output.trimmed1} {output.trimmed2} {output.trimmed3} {output.trimmed4} \
+		ILLUMINACLIP:{params.adapters}:2:30:10 LEADING:3 TRAILING:3	
+		'''
+
+rule bowtie_build:
+	input:
+		genome = 'align/GRCh38.primary_assembly.genome.fa'
+	output:
+		index = 'align/bowtie2_index/GRCh38'
+	params:
+		name = 'GRCh38'
+	threads: 16
+	conda:
+		'envs/bowtie2_env.yml'
+	shell:
+		"""
+		bowtie2-build {input.genome} {output.index} -p {threads}
+		"""
+
+rule bowtie2_align:
+	input:
+		R1 = 'data/{sample}_R1_trimmed_paired.fastq.gz',
+		R2 = 'data/{sample}_R2_trimmed_paired.fastq.gz'
+	output:
+		bam = 'align/{sample}_aligned.bam'
+	threads: 16
+	params:
+		gendir = 'align/bowtie2_index/'
+	conda:
+		'envs/bowtie2_env.yml'
+	shell:
+		"""
+		bowtie2 -x {params.gendir}GRCh38 -1 {input.R1} -2 {input.R2} -X 2000 -p 14 | samtools view -bS > {output.bam}
+		"""
+
+rule samtools_flagstats:
+	input:
+		bam = "align/{sample}_aligned.bam"
+	output:
+		txt = "align/{sample}_flagstat.txt"
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		"""
+		samtools flagstat {input.bam} > {output.txt}
+		"""
+
+rule multiqc:
+	input:
+		fastqc = expand("data/{SAMPLES}_fastqc.html", SAMPLES=SAMPLES),
+		flagstat = expand("align/{SAMPLES}_flagstat.txt", SAMPLES=SAMPLES)
+	output:
+		report = "align/multiqc_report.html"
+	params:
+		outdir = "results/week2/"
+	conda:
+		'envs/multiqc_env.yml'
+	shell:
+		"""
+		multiqc {input.fastqc} {input.flagstat} -o {params.outdir}
+		"""
+
+rule remove_mitochondria:
+	input:
+		bam = 'align/{sample}_aligned.bam'
+	output:
+		bambam = 'align/{sample}_filtered.bam'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		"""
+		samtools view -b -o {output.bambam} -e 'rname != "chrM"' {input.bam}
+		"""
+
+rule samtools_sort:
+	input:
+		bam = 'align/{sample}_filtered.bam'
+	output:
+		sort = 'align/{sample}_sorted.bam'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		"""
+		samtools sort {input.bam} -o {output.sort}
+		"""
+
+rule samtools_idx:
+	input:
+		bam = 'align/{sample}_sorted.bam'
+	output:
+		idx = 'align/{sample}_sorted.bam.bai'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		"""
+		samtools index {input.bam}
+		"""
+
+rule alignmentSieve:
+	input:
+		bam = 'align/{sample}_sorted.bam',
+		idx = 'align/{sample}_sorted.bam.bai',
+		blacklist = 'hg38-blacklist.v2.bed'
+	output:
+		shift = 'align/{sample}_shifted.bam'
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		"""
+		alignmentSieve -b {input.bam} -o {output.shift} --ATACshift -bl {input.blacklist}
+		"""
+
+rule samtools_sort2:
+	input:
+		bam = 'align/{sample}_shifted.bam'
+	output:
+		sort = 'align/{sample}_shift_sort.bam'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		"""
+		samtools sort {input.bam} -o {output.sort}
+		"""
+
+rule samtools_idx2:
+	input:
+		bam = 'align/{sample}_shift_sort.bam'
+	output:
+		idx = 'align/{sample}_shift_sort.bam.bai'
+	conda:
+		'envs/samtools_env.yml'
+	shell:
+		"""
+		samtools index {input.bam}
+		"""
+
+rule ATACseq_QC:
+	input:
+		bam1 = 'align/{sample}_shift_sort.bam'
+	output:
+		outdir = 'plot/{sample}.fragmentSizeDistribution.jpeg'
+	params:
+		dir = 'plot/'
+	conda:
+		'envs/R_env.yml'
+	shell:
+		"""
+		Rscript atacseqQC.R {input.bam1} {params.dir}
+		"""
+
+rule macs3:
+	input:
+		bam = 'align/{sample}_shift_sort.bam'
+	output:
+		peaks = 'macs3/{sample}_peaks.narrowPeak'
+	params:
+		outdir = 'macs3/'
+	conda:
+		'envs/macs3_env.yml'
+	shell:
+		"""
+		macs3 callpeak -t {input.bam} -n {wildcards.sample} --outdir {params.outdir} --format BAMPE --nolambda -q .01
+		"""
+
+rule intersect:
+	input:
+		one = 'macs3/ATACrep3_peaks.narrowPeak',
+		two = 'macs3/ATACrep4_peaks.narrowPeak'
+	output:
+		bed = 'results/intersect.bed'
+	conda:
+		'envs/bedtools_env.yml'
+	shell:
+		"""
+		bedtools intersect -a {input.one} -b {input.two} > {output.bed}
+		"""
+
+rule filter_blacklist:
+	input:
+		bed = "results/intersect.bed",
+		blacklist = "hg38-blacklist.v2.bed"
+	output:
+		reproduce = "results/reproducible_peaks.bed"
+	conda:
+		'envs/bedtools_env.yml'
+	shell:
+		"""
+		bedtools intersect -a {input.bed} -b {input.blacklist} -v > {output.reproduce}
+		"""
+
+rule annotate_peaks:
+	input:
+		peaks = 'results/intersect.bed',
+		gtf = 'results/gencode.v45.primary_assembly.annotation.gtf'
+	output:
+		txt = 'results/annotated.txt'
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		"""
+		annotatePeaks.pl {input.peaks} hg38 -gtf {input.gtf} > {output.txt}
+		"""
+
+rule motifs:
+	input:
+		peak = 'results/annotated.txt',
+		genome = 'align/GRCh38.primary_assembly.genome.fa'
+	output:
+		motif = directory('results/motif/')
+	conda:
+		'envs/homer_env.yml'
+	shell:
+		"""
+		findMotifsGenome.pl {input.peak} {input.genome} {output.motif}
+		"""
+
+rule pie:
+	input:
+		anno = 'results/annotated.txt'
+	output:
+		png = 'results/mypeaks.png'
+	conda:
+		'envs/R_env.yml'
+	shell:
+		"""
+		Rscript pie.R {input.anno} {output.png}
+		"""
+
+rule nuc_bound_bamCoverage:
+	input:
+		index = 'align/{sample}_shift_sort.bam.bai',
+		bam = 'align/{sample}_shift_sort.bam'
+	output:
+		bamcov = 'bamcoverage/{sample}_nucleosomebound.bw'
+	threads: 4
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		bamCoverage -p {threads} -b {input.bam} --maxFragmentLength 99 -o {output.bamcov}
+		'''
+
+rule nuc_free_bamCoverage:
+	input:
+		index = 'align/{sample}_shift_sort.bam.bai',
+		bam = 'align/{sample}_shift_sort.bam'
+	output:
+		bamcov = 'bamcoverage/{sample}_nucleosomefree.bw'
+	threads: 4
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		bamCoverage -p {threads} -b {input.bam} --minFragmentLength 100 -o {output.bamcov}
+		'''
+
+rule computeMatrix:
+	input:
+		bed = "bamcoverage/hg38_genes.bed",
+		bigwigs = ['bamcoverage/{sample}_nucleosomebound.bw', 'bamcoverage/{sample}_nucleosomefree.bw']
+	output:
+		"bamcoverage/{sample}_computematrix.gz"
+	params:
+	conda:
+		'envs/deeptools_env.yml'
+	threads: 4
+	shell:
+		'''
+		computeMatrix reference-point -S {input.bigwigs} -R {input.bed} -b 2000 --outFileName {output}
+		'''
+
+rule plotMatrix:
+	input:
+		matrixes = "bamcoverage/{sample}_computematrix.gz"
+	output:
+		plot = "bamcoverage/{sample}_plotprofile.png"
+	conda:
+		'envs/deeptools_env.yml'
+	shell:
+		'''
+		plotProfile --perGroup -m {input.matrixes} -o {output.plot}
+		'''
