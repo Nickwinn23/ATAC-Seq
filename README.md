@@ -63,7 +63,7 @@ This workflow describes the ATAC-seq analysis process using two replicates of pa
 - **Motif Analysis Files:**
   - Provided by **Homer's findMotifsGenome**.
 - **Gene Enrichment Analysis:**
-  - Conducted via an R script or a tool like GREAT.
+  - Conducted via an R script.
 - **Chromatin Accessibility Proportions:**
   - Displayed using an R script showing the proportion of regions with accessible chromatin identified as peaks.
 
