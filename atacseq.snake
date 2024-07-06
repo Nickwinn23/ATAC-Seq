@@ -1,35 +1,22 @@
-SAMPLES = ['ATACrep3_R1', 'ATACrep3_R2', 'ATACrep4_R1', 'ATACrep4_R2']
-REP = ['ATACrep3', 'ATACrep4']
+### ATAC-Seq Snakemake Pipeline ###
+### Nicholas Winn ###
+
+# Wildcards
+SAMPLES = ['ATACrep3_R1', 'ATACrep3_R2', 'ATACrep4_R1', 'ATACrep4_R2'],
 ATAC = ['ATACrep3', 'ATACrep4']
 
+# Required output files 
 rule all:
 	input:
-		#expand('data/{sample}.fastqc.html', sample=SAMPLES),
-		#expand('data/{rep}_R1_trimmed_paired.fastq.gz', rep=REP),
-		#expand('data/{rep}_R1_trimmed_unpaired.fastq.gz', rep=REP),
-		#expand('data/{rep}_R2_trimmed_paired.fastq.gz', rep=REP),
-		#expand('data/{rep}_R2_trimmed_unpaired.fastq.gz', rep=REP)
-		#'align/bowtie2_index/GRCh38'
-		#expand('align/{atac}_aligned.bam', atac=ATAC),
-		#"align/multiqc_report.html"
-		#expand('align/{atac}_filtered.bam', atac=ATAC),
-		#expand('align/{atac}_sorted.bam', atac=ATAC),
-		#expand('align/{atac}_sorted.bam.bai', atac=ATAC),
-		#expand('align/{atac}_shifted.bam', atac=ATAC),
-		#expand('align/{atac}_sorted.bam.bai', atac=ATAC)
-		#expand('align/{atac}_shift_sort.bam.bai', atac=ATAC),
-		#expand('plot/{atac}.fragmentSizeDistribution.jpeg', atac=ATAC)
-		#expand('macs3/{atac}_peaks.narrowPeak', atac=ATAC)
-		#'results/intersect.bed'
-		#"results/reproducible_peaks.bed"
-		#'results/annotated.txt',
-		#'results/motif'
-		#'results/mypeaks.png'
-		#expand('bamcoverage/{atac}_nucleosomebound.bw', atac=ATAC),
-		#expand('bamcoverage/{atac}_nucleosomefree.bw', atac=ATAC)
-		#expand('bamcoverage/{atac}_plotprofile.png', atac=ATAC)
+		'align/bowtie2_index/GRCh38',
+		'align/multiqc_report.html',
+		expand('plot/{atac}.fragmentSizeDistribution.jpeg', atac=ATAC),
+		'results/reproducible_peaks.bed',
+		'results/motif',
+		'results/mypeaks.png',
+		expand('bamcoverage/{atac}_plotprofile.png', atac=ATAC)
 		
-
+# Quality control on FASTQ files
 rule fastqc:
 	input:
 		raw = 'data/{sample}.fastq.gz'
@@ -45,6 +32,7 @@ rule fastqc:
 		fastqc {input.raw} -t {threads} -o {params.outdir}
 		"""
 
+# Trim adapters
 rule trimmomatic:
 	input:
 		trim1 = 'data/{sample}_R1.fastq.gz',
@@ -65,6 +53,7 @@ rule trimmomatic:
 		ILLUMINACLIP:{params.adapters}:2:30:10 LEADING:3 TRAILING:3	
 		'''
 
+# Build reference
 rule bowtie_build:
 	input:
 		genome = 'align/GRCh38.primary_assembly.genome.fa'
@@ -80,6 +69,7 @@ rule bowtie_build:
 		bowtie2-build {input.genome} {output.index} -p {threads}
 		"""
 
+# Align trimmed FASTQ files to reference
 rule bowtie2_align:
 	input:
 		R1 = 'data/{sample}_R1_trimmed_paired.fastq.gz',
@@ -96,6 +86,7 @@ rule bowtie2_align:
 		bowtie2 -x {params.gendir}GRCh38 -1 {input.R1} -2 {input.R2} -X 2000 -p 14 | samtools view -bS > {output.bam}
 		"""
 
+# Calculate statistics
 rule samtools_flagstats:
 	input:
 		bam = "align/{sample}_aligned.bam"
@@ -108,6 +99,7 @@ rule samtools_flagstats:
 		samtools flagstat {input.bam} > {output.txt}
 		"""
 
+# Quality control report
 rule multiqc:
 	input:
 		fastqc = expand("data/{SAMPLES}_fastqc.html", SAMPLES=SAMPLES),
@@ -123,6 +115,7 @@ rule multiqc:
 		multiqc {input.fastqc} {input.flagstat} -o {params.outdir}
 		"""
 
+# Remove mitochondria from samples
 rule remove_mitochondria:
 	input:
 		bam = 'align/{sample}_aligned.bam'
@@ -135,6 +128,7 @@ rule remove_mitochondria:
 		samtools view -b -o {output.bambam} -e 'rname != "chrM"' {input.bam}
 		"""
 
+# Sort BAM files before indexing
 rule samtools_sort:
 	input:
 		bam = 'align/{sample}_filtered.bam'
@@ -147,6 +141,7 @@ rule samtools_sort:
 		samtools sort {input.bam} -o {output.sort}
 		"""
 
+# Index BAM files for fast look-up 
 rule samtools_idx:
 	input:
 		bam = 'align/{sample}_sorted.bam'
@@ -159,6 +154,7 @@ rule samtools_idx:
 		samtools index {input.bam}
 		"""
 
+# Shift and filter BAM files
 rule alignmentSieve:
 	input:
 		bam = 'align/{sample}_sorted.bam',
@@ -173,6 +169,7 @@ rule alignmentSieve:
 		alignmentSieve -b {input.bam} -o {output.shift} --ATACshift -bl {input.blacklist}
 		"""
 
+# Re-sort the shifted and filtered BAM files
 rule samtools_sort2:
 	input:
 		bam = 'align/{sample}_shifted.bam'
@@ -185,6 +182,7 @@ rule samtools_sort2:
 		samtools sort {input.bam} -o {output.sort}
 		"""
 
+# Reconstruct index for BAM files after shift and sort
 rule samtools_idx2:
 	input:
 		bam = 'align/{sample}_shift_sort.bam'
@@ -197,6 +195,7 @@ rule samtools_idx2:
 		samtools index {input.bam}
 		"""
 
+# Quality control of ATAC, fragment distribution plot
 rule ATACseq_QC:
 	input:
 		bam1 = 'align/{sample}_shift_sort.bam'
@@ -211,6 +210,7 @@ rule ATACseq_QC:
 		Rscript atacseqQC.R {input.bam1} {params.dir}
 		"""
 
+# Peak call
 rule macs3:
 	input:
 		bam = 'align/{sample}_shift_sort.bam'
@@ -225,6 +225,7 @@ rule macs3:
 		macs3 callpeak -t {input.bam} -n {wildcards.sample} --outdir {params.outdir} --format BAMPE --nolambda -q .01
 		"""
 
+# Overlay peaks
 rule intersect:
 	input:
 		one = 'macs3/ATACrep3_peaks.narrowPeak',
@@ -238,6 +239,7 @@ rule intersect:
 		bedtools intersect -a {input.one} -b {input.two} > {output.bed}
 		"""
 
+# Blacklist region
 rule filter_blacklist:
 	input:
 		bed = "results/intersect.bed",
@@ -251,6 +253,7 @@ rule filter_blacklist:
 		bedtools intersect -a {input.bed} -b {input.blacklist} -v > {output.reproduce}
 		"""
 
+# Annotate the peaks
 rule annotate_peaks:
 	input:
 		peaks = 'results/intersect.bed',
@@ -264,6 +267,7 @@ rule annotate_peaks:
 		annotatePeaks.pl {input.peaks} hg38 -gtf {input.gtf} > {output.txt}
 		"""
 
+# Motif analysis
 rule motifs:
 	input:
 		peak = 'results/annotated.txt',
@@ -277,6 +281,7 @@ rule motifs:
 		findMotifsGenome.pl {input.peak} {input.genome} {output.motif}
 		"""
 
+# Create a pie chart of annotations with an R script
 rule pie:
 	input:
 		anno = 'results/annotated.txt'
@@ -289,6 +294,7 @@ rule pie:
 		Rscript pie.R {input.anno} {output.png}
 		"""
 
+# Make bigwigs of nucleosome bound
 rule nuc_bound_bamCoverage:
 	input:
 		index = 'align/{sample}_shift_sort.bam.bai',
@@ -303,6 +309,7 @@ rule nuc_bound_bamCoverage:
 		bamCoverage -p {threads} -b {input.bam} --maxFragmentLength 99 -o {output.bamcov}
 		'''
 
+# Make bigwigs of nuclesome free
 rule nuc_free_bamCoverage:
 	input:
 		index = 'align/{sample}_shift_sort.bam.bai',
@@ -317,6 +324,7 @@ rule nuc_free_bamCoverage:
 		bamCoverage -p {threads} -b {input.bam} --minFragmentLength 100 -o {output.bamcov}
 		'''
 
+# Calculate scores per genome region
 rule computeMatrix:
 	input:
 		bed = "bamcoverage/hg38_genes.bed",
@@ -332,6 +340,7 @@ rule computeMatrix:
 		computeMatrix reference-point -S {input.bigwigs} -R {input.bed} -b 2000 --outFileName {output}
 		'''
 
+# Plot compute matrix
 rule plotMatrix:
 	input:
 		matrixes = "bamcoverage/{sample}_computematrix.gz"
