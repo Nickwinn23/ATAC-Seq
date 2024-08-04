@@ -1,0 +1,112 @@
+---
+title: "Nicholas_Winn_ATACseq"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-04-27"
+---
+
+
+# BF528: Nicholas Winn ATAC-seq Project
+
+
+## Workflow and Results
+
+  The analysis begins with quality control of the library preparation, and no issues were identified. However, there were concerning levels of duplication but this is expected in ATAC-sequencing so it was not deemed an issue. The adapters used during library preparation were trimmed. Quality control of the alignment was also performed and no issues were identified either. There were 162,679,456 reads that aligned for sample 3 and 121,196,558 reads that aligned for sample 4. There were over 20,000,000 reads that aligned to mitochondria and were filtered out.
+  
+<br>      
+
+<table>
+<caption>Number of Alignments</caption>
+
+
+
+Sample    Pre_Filtering  Mitochondrial Alignments   Post-filter 
+--------  -------------  ------------------------  -------------
+sample 3   162,679,456         25,997,440           136,682,016
+sample 4   121,196,558         20,278,186           100,918,372
+
+
+</table>
+  
+  A read length distribution plot was created using ATACseqQC for each sample. There is a large spike at length < 100, corresponding to nucleosome free regions of DNA. The smaller spikes at ~200 bp are mononucleosome and at ~400 bp is dinucleosome bound regions.
+
+```{r}
+knitr::include_graphics("results/ATACrep3_fragplot.jpeg")
+knitr::include_graphics("results/ATACrep4_fragplot.jpeg")
+```
+  
+  Peak calling was performed on each sample, producing a list of peaks. Sample 3 had 37,332 peaks while sample 4 had 33,931 peaks. In order to find the reproducible peaks, bedtools intersect was performed on the set of peaks files, generating a single file with 22,775 peaks. Peaks falling in blacklist regions were filtered out, leaving a total of 22,771 reproducible peaks. 
+  
+  
+<table>
+<caption>Number of Peaks</caption>
+
+
+
+Sample    Number of peaks  Total Reproducible Peaks
+--------  ---------------  --------------
+sample 3           37,332          22,771
+sample 4           33,931          22,771
+
+
+</table>
+  
+  
+  
+  The final bam files were also used to generate signal coverage plots for the unbound and mononucleosome bound regions in each sample as seen below. Generally, the nucleosome free regions have a higher more consistent peak at the TSS compared to the nucleosome bound regions. This is because generally the nucleosome free regions are ~50 bp long, while the bound region fragment length depends on what protein is bound in that region. This explains the wider peak in the NBR graphs. 
+  
+
+
+```{r}
+knitr::include_graphics("results/matrixplot_ATACrep3_NBR.png")
+knitr::include_graphics("results/matrixplot_ATACrep3_NFR.png")
+knitr::include_graphics("results/matrixplot_ATACrep4_NBR.png")
+knitr::include_graphics("results/matrixplot_ATACrep4_NFR.png")
+```
+
+ 
+  A motif analysis was then run of the set of reproducible peaks with the top 10 shown below. The top 10 enriched motifs consists of binding sequences for IRF, ETS, and ETV family transcription factors. IRF transcription factors are involved in regulating immune response-related genes. IRF-8 is the most enriched motif, and is involved in the development of granulocyte/monocyte cells. ETS transcription factors are very common in all organisms and have very wide ranging regulatory functions. Lastly, ETV family transcription factors have been linked to FGF mediated growth signaling pathways. These immune and growth related pathways make sense in the context of the sample cells, lymphoblastoids, which are actively growing and dividing cells involved in the immune response.
+
+```{r}
+knitr::include_graphics("results/knownMotifResults.png")
+```
+
+  
+  After annotating the file of reproducible peaks, a list of genes was generated and submitted to DAVID for analysis. DAVID identified and ranked the top functional pathways by increasing p-value. The leading pathways predominantly involved basic cellular functions, including cytoplasm, nucleus, protein binding, metabolism, and replication/translation machinery. Given that the study focused on sampling all open chromatin across a cell's genome, it is logical that the most enriched pathways pertain to general cellular functions. Additionally, the enrichment of cytoplasm, cell structure, and metabolism pathways can be attributed to the active division of lymphoblastoids.
+  
+```{r}
+knitr::include_graphics("DAVID_results.png")
+```
+  
+  The proportions of regions with accessible chromatin are graphed below. Promoter regions were the most prevalent, as active promoter sites naturally have bound transcription factors. Surprisingly, introns constituted the second largest proportion of open chromatin, while exons had the second fewest. This is mathematically consistent since only 1% of the genome is protein-coding. However, the significant accessibility of introns adds complexity to our understanding of their functions. ATAC-seq enables us to identify accessible chromatin regions in a cell, indicating which genes or promoters are actively transcribed or bound. Combining ATAC-seq with other NGS analyses can enhance our ability to capture genetic and epigenetic responses in experiments. 
+
+
+```{r}
+annotated<-read.delim('/projectnb/bf528/students/jfaulx/bf528-individual-project-jfaulx/results/analysis/annotated.txt',sep='\t')
+fileConn<-file("gene_list.txt")
+writeLines(annotated$Gene.Name, fileConn)
+close(fileConn)
+
+pietable <- table(unlist(lapply(strsplit(as.character(annotated$Annotation), " \\("),"[[",1))) 
+pie(pietable, main="Regions with Accessible Chromatin")
+```
+
+
+
+# Citations
+
+1. Andrews S. (2010). FastQC: a quality control tool for high throughput sequence data. Available online at:      http://www.bioinformatics.babraham.ac.uk/projects/fastqc
+2. Bolger, A. M., Lohse, M., & Usadel, B. (2014). Trimmomatic: A flexible trimmer for Illumina Sequence Data. Bioinformatics, btu170.
+3. Langmead B, Salzberg S. Fast gapped-read alignment with Bowtie 2. Nature Methods. 2012, 9:357-359.
+4. Twelve years of SAMtools and BCFtools
+Petr Danecek, James K Bonfield, Jennifer Liddle, John Marshall, Valeriu Ohan, Martin O Pollard, Andrew Whitwham, Thomas Keane, Shane A McCarthy, Robert M Davies, Heng Li
+GigaScience, Volume 10, Issue 2, February 2021, giab008, https://doi.org/10.1093/gigascience/giab008
+5. Ramírez, Fidel, Devon P. Ryan, Björn Grüning, Vivek Bhardwaj, Fabian Kilpert, Andreas S. Richter, Steffen Heyne, Friederike Dündar, and Thomas Manke. deepTools2: A next Generation Web Server for Deep-Sequencing Data Analysis. Nucleic Acids Research (2016). doi:10.1093/nar/gkw257.
+6. MultiQC: Summarize analysis results for multiple tools and samples in a single report
+Philip Ewels, Måns Magnusson, Sverker Lundin and Max Käller. Bioinformatics (2016)
+7. ATACseqQC: a Bioconductor package for post-alignment quality assessment of ATAC-seq data.” BMC Genomics, 19(1), 169. ISSN 1471-2164, doi:10.1186/s12864-018-4559-3, https://doi.org/10.1186/s12864-018-4559-3.
+8. 2008: Model-based Analysis of ChIP-Seq (MACS)
+9. Aaron R. Quinlan, Ira M. Hall, BEDTools: a flexible suite of utilities for comparing genomic features, Bioinformatics, Volume 26, Issue 6, March 2010, Pages 841–842, https://doi.org/10.1093/bioinformatics/btq033
+10. Heinz S, Benner C, Spann N, Bertolino E et al. Simple Combinations of Lineage-Determining Transcription Factors Prime cis-Regulatory Elements Required for Macrophage and B Cell Identities. Mol Cell 2010 May 28;38(4):576-589. PMID: 20513432
+11. Buenrostro, J., Giresi, P., Zaba, L. et al. Transposition of native chromatin for fast and sensitive epigenomic profiling of open chromatin, DNA-binding proteins and nucleosome position. Nat Methods 10, 1213–1218 (2013). https://doi.org/10.1038/nmeth.2688
